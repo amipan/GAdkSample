@@ -1,0 +1,21 @@
+[
+  {
+    "filename": "Income Statement - Accenture.pdf",
+    "relative_path": "Income Statement - Accenture.pdf",
+    "pages_processed": 2,
+    "ocr_pages": 0,
+    "borrower_name": "Greenfield Manufacturing LLC",
+    "role": "borrower",
+    "source": "pdf_text",
+    "evidence_quote": "Prepared for:Greenfield Manufacturing LLC",
+    "page_number": 1,
+    "confidence": 0.95,
+    "status": "EXTRACTED",
+    "alternatives": [],
+    "rationale": "The document explicitly states 'Prepared for: Greenfield Manufacturing LLC', indicating that the income statement pertains to this entity, which is the subject of the financial analysis and therefore the borrower.",
+    "validation_status": "REJECTED",
+    "validation_issues": [
+      "Evidence quote was not found on the claimed page"
+    ]
+  }
+]

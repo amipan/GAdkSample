@@ -1,0 +1,7 @@
+google-adk
+pymupdf 
+pytesseract 
+pillow 
+pydantic 
+python-dotenv
+mysql-connector-python

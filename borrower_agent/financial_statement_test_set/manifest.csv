@@ -1,0 +1,15 @@
+filename,folder,expected_label,pdf_type,test_purpose
+income_statement_digital.pdf,digital_pdfs,INCOME_STATEMENT,digital,"Text-selectable, clean canonical example."
+balance_sheet_digital.pdf,digital_pdfs,BALANCE_SHEET,digital,"Text-selectable, clean canonical example."
+cash_flow_statement_digital.pdf,digital_pdfs,CASH_FLOW_STATEMENT,digital,"Text-selectable, clean canonical example."
+income_statement_scanned.pdf,scanned_pdfs,INCOME_STATEMENT,scanned,Image-only PDF; OCR required.
+balance_sheet_scanned.pdf,scanned_pdfs,BALANCE_SHEET,scanned,Image-only PDF; OCR required.
+cash_flow_statement_scanned.pdf,scanned_pdfs,CASH_FLOW_STATEMENT,scanned,Image-only PDF; OCR required.
+ambiguous_profit_loss.pdf,ambiguous_pdfs,INCOME_STATEMENT,digital,Likely INCOME_STATEMENT; test weak labels.
+ambiguous_working_capital.pdf,ambiguous_pdfs,UNKNOWN,digital,UNKNOWN or low-confidence BALANCE_SHEET; avoid overclaiming.
+ambiguous_cash_reconciliation.pdf,ambiguous_pdfs,UNKNOWN,digital,UNKNOWN; distinguish reconciliation from cash flow statement.
+ambiguous_combined_report.pdf,ambiguous_pdfs,UNKNOWN,digital,UNKNOWN at whole-document level; optionally split into sections.
+ambiguous_ar_aging.pdf,ambiguous_pdfs,UNKNOWN,digital,"UNKNOWN; supporting schedule, not primary statement."
+ambiguous_cash_and_profit.pdf,ambiguous_pdfs,UNKNOWN,digital,UNKNOWN; mixed metrics.
+ambiguous_nonfinancial.pdf,ambiguous_pdfs,UNKNOWN,digital,UNKNOWN; nonfinancial document with currency-like figures.
+ambiguous_incomplete.pdf,ambiguous_pdfs,UNKNOWN,digital,UNKNOWN; incomplete page fragment.
