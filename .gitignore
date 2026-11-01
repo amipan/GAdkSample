@@ -1,1 +1,7 @@
 pdf_store/.env
+langgraph_approval.sqlite3
+__pycache__/
+*.py[cod]
+langgraph_approval.sqlite3-shm
+langgraph_approval.sqlite3-wal
+borrower_agent/__pycache__/agent.cpython-314.pyc

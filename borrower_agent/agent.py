@@ -22,8 +22,8 @@ BASE_DIR = Path(__file__).resolve().parent
 DATASET_DIR = BASE_DIR / "financial_statement_test_set2"
 OUTPUT_FILE = BASE_DIR / "borrower_extraction_results.json"
 
-APP_NAME = "commercial_banking_poc"
-USER_ID = "test_user"
+APP_NAME = "financial_workflow"
+USER_ID = "financial_classifier_user"
 MODEL_NAME = "gemini-2.5-flash"
 
 # If Tesseract is not on PATH, set its executable here.

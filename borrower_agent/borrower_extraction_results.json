@@ -7,15 +7,13 @@
     "borrower_name": "Greenfield Manufacturing LLC",
     "role": "borrower",
     "source": "pdf_text",
-    "evidence_quote": "Prepared for:Greenfield Manufacturing LLC",
+    "evidence_quote": "Prepared for: Greenfield Manufacturing LLC",
     "page_number": 1,
-    "confidence": 0.95,
+    "confidence": 0.9,
     "status": "EXTRACTED",
     "alternatives": [],
-    "rationale": "The document explicitly states 'Prepared for: Greenfield Manufacturing LLC', indicating that the income statement pertains to this entity, which is the subject of the financial analysis and therefore the borrower.",
-    "validation_status": "REJECTED",
-    "validation_issues": [
-      "Evidence quote was not found on the claimed page"
-    ]
+    "rationale": "The document explicitly states 'Prepared for: Greenfield Manufacturing LLC' directly above the 'Income Statement' heading, indicating that Greenfield Manufacturing LLC is the primary entity for whom these financial statements were generated.",
+    "validation_status": "EVIDENCE_VERIFIED",
+    "validation_issues": []
   }
 ]

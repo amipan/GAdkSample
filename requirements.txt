@@ -1,4 +1,11 @@
 google-adk
+fastapi
+gradio
+httpx
+langchain-core
+langgraph
+langgraph-checkpoint-sqlite
+uvicorn
 pymupdf 
 pytesseract 
 pillow 
