@@ -1,9 +1,13 @@
 """A minimal six-node LangGraph workflow you can run locally."""
 
 from datetime import datetime
+import json
+import os
 import random
-from typing import Literal, NotRequired, TypedDict
+from pathlib import Path
+from typing import Any, Literal, NotRequired, TypedDict
 
+import httpx
 from langchain_core.tools import tool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -12,15 +16,41 @@ from langgraph.types import interrupt
 
 from workflow_run_registry import CHECKPOINT_DB_PATH, initialize_registry, save_run
 
+CLASSIFIER_API_URL = os.getenv("CLASSIFIER_API_URL", "http://127.0.0.1:8001")
+PDF_PATH = Path(
+    r"C:\Users\amipa\AVidhyaCourse\GAdkSample\borrower_agent\financial_statement_test_set\digital_pdfs\cash_flow_statement_digital.pdf"
+)
+
 
 class WorkflowState(TypedDict):
     steps: list[str]
+    classification: NotRequired[dict[str, Any]]
     random_number: NotRequired[int]
     approved: NotRequired[bool]
 
 
-def first_node(state: WorkflowState) -> dict[str, list[str]]:
-    return {"steps": [*state["steps"], "Node 1: Start the workflow"]}
+def first_node(state: WorkflowState) -> dict[str, Any]:
+    path = PDF_PATH.expanduser().resolve(strict=True)
+    if not path.is_file() or path.suffix.lower() != ".pdf":
+        raise ValueError(f"Expected a PDF file at {PDF_PATH}")
+
+    with path.open("rb") as pdf_file:
+        response = httpx.post(
+            f"{CLASSIFIER_API_URL}/classify",
+            files={"file": (path.name, pdf_file, "application/pdf")},
+            timeout=180,
+        )
+    response.raise_for_status()
+    classification = response.json()
+    print(f"Uploaded PDF: {path.name}")
+    print(f"Classifier API response:\n{json.dumps(classification, indent=2)}")
+    return {
+        "steps": [
+            *state["steps"],
+            f"Node 1: Classified {path.name} as {classification['category']}",
+        ],
+        "classification": classification,
+    }
 
 
 @tool
