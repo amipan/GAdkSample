@@ -10,6 +10,7 @@ from langgraph.types import Command
 from langgraph_four_node_workflow import build_graph
 from workflow_run_registry import (
     CHECKPOINT_DB_PATH,
+    completed_runs,
     initialize_registry,
     pending_runs,
     registry_connection,
@@ -91,7 +92,12 @@ def resume_workflow(request: Request, thread_id: str, approved: bool) -> dict:
         Command(resume=approved),
         {"configurable": {"thread_id": thread_id}},
     )
-    status = "approved" if approved else "rejected"
+    if result.get("__interrupt__"):
+        status = "waiting_for_approval"
+    elif approved:
+        status = "approved"
+    else:
+        status = "completed"
     save_run(thread_id, result, status)
     return workflow_response(thread_id, result, status)
 
@@ -111,3 +117,8 @@ def list_pending_workflows(request: Request) -> dict:
     workflow = request.app.state.workflow
     sync_interrupted_checkpoints(workflow)
     return {"runs": pending_runs()}
+
+
+@app.get("/workflows/completed")
+def list_completed_workflows() -> dict:
+    return {"runs": completed_runs()}

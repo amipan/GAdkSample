@@ -59,6 +59,31 @@ def pending_runs() -> list[dict]:
     ]
 
 
+def completed_runs(limit: int = 100) -> list[dict]:
+    with registry_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT thread_id, status, random_number, steps_json, created_at, updated_at
+            FROM workflow_runs
+            WHERE status IN ('completed', 'approved', 'rejected')
+            ORDER BY updated_at DESC, thread_id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [
+        {
+            "thread_id": row["thread_id"],
+            "status": row["status"],
+            "random_number": row["random_number"],
+            "steps": json.loads(row["steps_json"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
 def save_run(thread_id: str, result: dict, status: str) -> None:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with registry_connection() as connection:

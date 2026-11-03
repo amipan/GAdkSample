@@ -36,6 +36,7 @@ The API provides these endpoints:
 - `POST /workflows/{thread_id}/approve` approves a paused workflow.
 - `POST /workflows/{thread_id}/reject` rejects a paused workflow.
 - `GET /workflows/pending` lists workflows awaiting approval.
+- `GET /workflows/completed` lists finalized workflows, newest first.
 
 The workflow branches on a random number from 1 to 100. Values below 50 finish without approval; values of 50 or higher pause at node six for a human decision.
 

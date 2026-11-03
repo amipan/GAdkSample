@@ -37,6 +37,28 @@ def dropdown_choices(runs: list[dict]) -> list[tuple[str, str]]:
     ]
 
 
+def completed_table_rows() -> list[list[str | int | None]]:
+    runs = call_api("GET", "/workflows/completed")["runs"]
+    return [
+        [
+            run["updated_at"],
+            run["thread_id"],
+            run["status"],
+            run["random_number"],
+            " | ".join(run["steps"]),
+        ]
+        for run in runs
+    ]
+
+
+def refresh_completed():
+    try:
+        rows = completed_table_rows()
+    except (httpx.HTTPError, RuntimeError) as error:
+        return gr.update(), f"Could not load completed workflows: {error}"
+    return rows, f"Showing {len(rows)} completed workflow(s), newest first."
+
+
 def refresh_pending():
     try:
         runs = call_api("GET", "/workflows/pending")["runs"]
@@ -53,7 +75,7 @@ def start_workflow():
         result = call_api("POST", "/workflows")
         runs = call_api("GET", "/workflows/pending")["runs"]
     except (httpx.HTTPError, RuntimeError) as error:
-        return gr.update(), f"Could not start workflow: {error}"
+        return gr.update(), f"Could not start workflow: {error}", gr.update()
 
     choices = dropdown_choices(runs)
     if result["status"] == "waiting_for_approval":
@@ -61,24 +83,44 @@ def start_workflow():
             f"Approval required for random number {result['random_number']}. "
             f"Thread ID: {result['thread_id']}\n\n{format_result(result)}"
         )
-        return gr.update(choices=choices, value=result["thread_id"]), message
-    return gr.update(choices=choices, value=None), format_result(result)
+        return gr.update(choices=choices, value=result["thread_id"]), message, gr.update()
+    completed_update, _ = refresh_completed()
+    return gr.update(choices=choices, value=None), format_result(result), completed_update
 
 
 def resume_workflow(thread_id: str | None, decision: str):
     if not thread_id:
         update, status = refresh_pending()
-        return update, f"Select a pending run first. {status}"
+        return update, f"Select a pending run first. {status}", gr.update()
 
     try:
         result = call_api("POST", f"/workflows/{thread_id}/{decision}")
         runs = call_api("GET", "/workflows/pending")["runs"]
     except (httpx.HTTPError, RuntimeError) as error:
-        return gr.update(), f"Could not {decision} workflow: {error}"
+        return gr.update(), f"Could not {decision} workflow: {error}", gr.update()
 
     choices = dropdown_choices(runs)
-    message = "Approved. Workflow completed." if decision == "approve" else "Rejected. Workflow ended."
-    return gr.update(choices=choices, value=None), f"{message}\n\n{format_result(result)}"
+    if result["status"] == "waiting_for_approval":
+        message = (
+            "Rejected. Workflow returned to Node 2 and needs another review "
+            f"for random number {result['random_number']}."
+        )
+        return (
+            gr.update(choices=choices, value=thread_id),
+            f"{message}\n\n{format_result(result)}",
+            gr.update(),
+        )
+
+    if decision == "approve":
+        message = "Approved. Workflow completed."
+    else:
+        message = "Rejected. Workflow retried from Node 2 and completed."
+    completed_update, _ = refresh_completed()
+    return (
+        gr.update(choices=choices, value=None),
+        f"{message}\n\n{format_result(result)}",
+        completed_update,
+    )
 
 
 def create_page():
@@ -86,37 +128,60 @@ def create_page():
         gr.Markdown("# LangGraph workflow approval")
         gr.Markdown("Start a run, then approve or reject it if node six is reached.")
 
-        start_button = gr.Button("Start workflow", variant="primary")
-        pending_run = gr.Dropdown(
-            label="Pending approval",
-            choices=[],
-            value=None,
-            interactive=True,
-        )
-        with gr.Row():
-            approve_button = gr.Button("Approve")
-            reject_button = gr.Button("Reject", variant="stop")
-            refresh_button = gr.Button("Refresh pending runs")
-        output = gr.Textbox(label="Workflow status", lines=8, interactive=False)
+        with gr.Tabs():
+            with gr.Tab("Pending approvals"):
+                start_button = gr.Button("Start workflow", variant="primary")
+                pending_run = gr.Dropdown(
+                    label="Pending approval",
+                    choices=[],
+                    value=None,
+                    interactive=True,
+                )
+                with gr.Row():
+                    approve_button = gr.Button("Approve")
+                    reject_button = gr.Button("Reject", variant="stop")
+                    refresh_button = gr.Button("Refresh pending runs")
+                output = gr.Textbox(label="Workflow status", lines=8, interactive=False)
+
+            with gr.Tab("Completed workflows"):
+                completed_refresh_button = gr.Button("Refresh completed workflows")
+                completed_table = gr.Dataframe(
+                    value=[],
+                    headers=["Finished (UTC)", "Thread ID", "Status", "Random number", "Steps"],
+                    datatype=["str", "str", "str", "number", "str"],
+                    column_count=5,
+                    max_height=420,
+                    interactive=False,
+                    wrap=True,
+                    show_search="search",
+                )
+                completed_status = gr.Textbox(
+                    label="History status",
+                    lines=1,
+                    interactive=False,
+                )
 
         start_button.click(
             start_workflow,
-            outputs=[pending_run, output],
+            outputs=[pending_run, output, completed_table],
         )
         approve_button.click(
             lambda thread_id: resume_workflow(thread_id, "approve"),
             inputs=pending_run,
-            outputs=[pending_run, output],
+            outputs=[pending_run, output, completed_table],
         )
         reject_button.click(
             lambda thread_id: resume_workflow(thread_id, "reject"),
             inputs=pending_run,
-            outputs=[pending_run, output],
+            outputs=[pending_run, output, completed_table],
         )
-        refresh_button.click(
-            refresh_pending, outputs=[pending_run, output]
+        refresh_button.click(refresh_pending, outputs=[pending_run, output])
+        completed_refresh_button.click(
+            refresh_completed,
+            outputs=[completed_table, completed_status],
         )
         page.load(refresh_pending, outputs=[pending_run, output])
+        page.load(refresh_completed, outputs=[completed_table, completed_status])
 
     return page
 

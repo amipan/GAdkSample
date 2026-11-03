@@ -63,13 +63,13 @@ def sixth_node(state: WorkflowState) -> dict[str, list[str]]:
             "approved": True,
         }
     return {
-        "steps": [*state["steps"], "Node 6: Rejected. The workflow ends here."],
+        "steps": [*state["steps"], "Node 6: Rejected. Returning to Node 2."],
         "approved": False,
     }
 
 
-def route_after_sixth(state: WorkflowState) -> Literal["fourth", "__end__"]:
-    return "fourth" if state.get("approved", False) else END
+def route_after_sixth(state: WorkflowState) -> Literal["fourth", "second"]:
+    return "fourth" if state.get("approved", False) else "second"
 
 
 def fourth_node(state: WorkflowState) -> dict[str, list[str]]:
@@ -97,7 +97,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_conditional_edges(
         "sixth",
         route_after_sixth,
-        {"fourth": "fourth", END: END},
+        {"fourth": "fourth", "second": "second"},
     )
     graph.add_edge("fourth", END)
 
