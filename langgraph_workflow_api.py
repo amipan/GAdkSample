@@ -59,6 +59,8 @@ def workflow_response(thread_id: str, result: dict, status: str) -> dict:
         "thread_id": thread_id,
         "status": status,
         "random_number": result.get("random_number"),
+        "borrower_name": result.get("borrower_name"),
+        "classified_file": (result.get("classification") or {}).get("category"),
         "steps": result.get("steps", []),
         "interrupt": interrupt_payload,
     }

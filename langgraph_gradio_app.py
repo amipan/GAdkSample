@@ -1,11 +1,14 @@
 """Standalone Gradio page for starting and approving LangGraph runs."""
 
 import os
+from pathlib import Path
 
 import gradio as gr
 import httpx
+from dotenv import load_dotenv
 
-API_BASE_URL = os.getenv("LANGGRAPH_API_URL", "http://127.0.0.1:8000")
+load_dotenv(Path(__file__).with_name(".env"))
+API_BASE_URL = os.getenv("LANGGRAPH_API_URL") or "http://127.0.0.1:8000"
 
 
 def format_result(result: dict) -> str:
@@ -30,7 +33,8 @@ def call_api(method: str, path: str) -> dict:
 def dropdown_choices(runs: list[dict]) -> list[tuple[str, str]]:
     return [
         (
-            f"{run['thread_id'][:8]} | number {run['random_number']} | {run['created_at']}",
+            f"{run['thread_id'][:8]} | {run.get('classified_file') or 'unclassified'} | "
+            f"number {run['random_number']} | {run['created_at']}",
             run["thread_id"],
         )
         for run in runs
@@ -42,8 +46,10 @@ def completed_table_rows() -> list[list[str | int | None]]:
     return [
         [
             run["updated_at"],
-            run["thread_id"],
+            run["thread_id"][:10],
             run["status"],
+            run["classified_file"],
+            run["borrower_name"],
             run["random_number"],
             " | ".join(run["steps"]),
         ]
@@ -147,9 +153,9 @@ def create_page():
                 completed_refresh_button = gr.Button("Refresh completed workflows")
                 completed_table = gr.Dataframe(
                     value=[],
-                    headers=["Finished (UTC)", "Thread ID", "Status", "Random number", "Steps"],
-                    datatype=["str", "str", "str", "number", "str"],
-                    column_count=5,
+                    headers=["Finished (UTC)", "Thread ID", "Status", "Classification", "Borrower", "Random number", "Steps"],
+                    datatype=["str", "str", "str", "str", "str", "number", "str"],
+                    column_count=7,
                     max_height=420,
                     interactive=False,
                     wrap=True,
