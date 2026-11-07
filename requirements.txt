@@ -12,3 +12,4 @@ pillow
 pydantic 
 python-dotenv
 mysql-connector-python
+reportlab

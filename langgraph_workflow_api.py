@@ -60,6 +60,8 @@ def workflow_response(thread_id: str, result: dict, status: str) -> dict:
         "status": status,
         "random_number": result.get("random_number"),
         "borrower_name": result.get("borrower_name"),
+        "loan_number": result.get("loan_number"),
+        "borrower_extraction_result": result.get("borrower_extraction_result"),
         "classified_file": (result.get("classification") or {}).get("category"),
         "steps": result.get("steps", []),
         "interrupt": interrupt_payload,
@@ -78,7 +80,13 @@ def start_workflow(request: Request) -> dict:
     return workflow_response(thread_id, result, status)
 
 
-def resume_workflow(request: Request, thread_id: str, approved: bool) -> dict:
+async def resume_workflow(
+    request: Request,
+    thread_id: str,
+    approved: bool,
+    borrower_name: str | None = None,
+    loan_number: str | None = None,
+) -> dict:
     with registry_connection() as connection:
         row = connection.execute(
             "SELECT status FROM workflow_runs WHERE thread_id = ?",
@@ -91,7 +99,7 @@ def resume_workflow(request: Request, thread_id: str, approved: bool) -> dict:
         raise HTTPException(status_code=409, detail="Workflow run is not waiting for approval")
 
     result = request.app.state.workflow.invoke(
-        Command(resume=approved),
+        Command(resume={"approved": approved, "borrower_name": borrower_name, "loan_number": loan_number}),
         {"configurable": {"thread_id": thread_id}},
     )
     if result.get("__interrupt__"):
@@ -105,20 +113,50 @@ def resume_workflow(request: Request, thread_id: str, approved: bool) -> dict:
 
 
 @app.post("/workflows/{thread_id}/approve")
-def approve_workflow(thread_id: str, request: Request) -> dict:
-    return resume_workflow(request, thread_id, approved=True)
+async def approve_workflow(thread_id: str, request: Request) -> dict:
+    payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    borrower_name = payload.get("borrower_name")
+    loan_number = payload.get("loan_number")
+    return await resume_workflow(
+        request,
+        thread_id,
+        approved=True,
+        borrower_name=borrower_name,
+        loan_number=loan_number,
+    )
 
 
 @app.post("/workflows/{thread_id}/reject")
-def reject_workflow(thread_id: str, request: Request) -> dict:
-    return resume_workflow(request, thread_id, approved=False)
+async def reject_workflow(thread_id: str, request: Request) -> dict:
+    payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    borrower_name = payload.get("borrower_name")
+    loan_number = payload.get("loan_number")
+    return await resume_workflow(
+        request,
+        thread_id,
+        approved=False,
+        borrower_name=borrower_name,
+        loan_number=loan_number,
+    )
 
 
 @app.get("/workflows/pending")
 def list_pending_workflows(request: Request) -> dict:
     workflow = request.app.state.workflow
     sync_interrupted_checkpoints(workflow)
-    return {"runs": pending_runs()}
+    runs = pending_runs()
+    enriched_runs = []
+    for run in runs:
+        state = workflow.get_state({"configurable": {"thread_id": run["thread_id"]}})
+        values = state.values or {}
+        if values.get("borrower_extraction_result") is not None:
+            run["borrower_extraction_result"] = values.get("borrower_extraction_result")
+        if values.get("borrower_name") is not None:
+            run["borrower_name"] = values.get("borrower_name")
+        if values.get("loan_number") is not None:
+            run["loan_number"] = values.get("loan_number")
+        enriched_runs.append(run)
+    return {"runs": enriched_runs}
 
 
 @app.get("/workflows/completed")

@@ -19,7 +19,7 @@ from workflow_run_registry import CHECKPOINT_DB_PATH, initialize_registry, save_
 CLASSIFIER_API_URL = os.getenv("CLASSIFIER_API_URL", "http://127.0.0.1:8001")
 ATTRIBUTION_API_URL = os.getenv("ATTRIBUTION_API_URL", "http://127.0.0.1:8002")
 PDF_PATH = Path(
-    r"C:\Users\amipa\AVidhyaCourse\GAdkSample\borrower_agent\financial_statement_test_set\ambiguous_pdfs\ambiguous_profit_loss.pdf"
+    r"C:\Users\amipa\AVidhyaCourse\GAdkSample\pdf_store\Northstar_Components_Income_Statement.pdf"
 )
 
 
@@ -27,6 +27,8 @@ class WorkflowState(TypedDict):
     steps: list[str]
     classification: NotRequired[dict[str, Any]]
     borrower_name: NotRequired[str | None]
+    loan_number: NotRequired[str | None]
+    borrower_extraction_result: NotRequired[dict[str, Any] | None]
     random_number: NotRequired[int]
     approved: NotRequired[bool]
 
@@ -72,16 +74,43 @@ def second_node(steps: list[str]) -> dict[str, Any]:
     attribution = response.json()
     print(f"Borrower attribution API response:\n{json.dumps(attribution, indent=2)}")
     borrower_name = attribution.get("borrower_name")
+    loan_number = attribution.get("loan_number")
 
-    #current_time = datetime.now().astimezone().isoformat(timespec="seconds")
     return {
         "steps": [
             *steps,
             f"Node 2: Borrower attribution for {path.name}: "
             f"{json.dumps(attribution, ensure_ascii=False)}",
-            #f"Node 2: Current system time is {current_time}",
         ],
         "borrower_name": borrower_name,
+        "loan_number": loan_number,
+        "borrower_extraction_result": attribution,
+    }
+
+
+def human_review(state: WorkflowState) -> dict[str, Any]:
+    decision = interrupt(
+        {
+            "message": "Review the extracted borrower and choose whether to continue.",
+            "borrower_name": state.get("borrower_name"),
+            "loan_number": state.get("loan_number"),
+            "borrower_extraction_result": state.get("borrower_extraction_result"),
+        }
+    )
+    approved = bool(decision.get("approved", False)) if isinstance(decision, dict) else bool(decision)
+    borrower_name = (decision or {}).get("borrower_name") if isinstance(decision, dict) else state.get("borrower_name")
+    updated_name = borrower_name or state.get("borrower_name")
+    loan_number = (decision or {}).get("loan_number") if isinstance(decision, dict) else state.get("loan_number")
+    updated_loan_number = loan_number or state.get("loan_number")
+    return {
+        "steps": [
+            *state["steps"],
+            "Node 2.5: Human review complete. "
+            + ("Approved; continuing to the random-number stage." if approved else "Rejected; returning to borrower attribution."),
+        ],
+        "borrower_name": updated_name,
+        "loan_number": updated_loan_number,
+        "approved": approved,
     }
 
 
@@ -108,27 +137,16 @@ def fifth_node(state: WorkflowState) -> dict[str, list[str]]:
 
 
 def sixth_node(state: WorkflowState) -> dict[str, list[str]]:
-    approved = interrupt(
-        {
-            "message": "Node 6 needs human approval before continuing.",
-            "random_number": state["random_number"],
-        }
-    )
-    if approved:
-        return {
-            "steps": [*state["steps"], "Node 6: Approved. Continuing the workflow."],
-            "approved": True,
-        }
     return {
-        "steps": [*state["steps"], "Node 6: Rejected. Returning to Node 2."],
-        "approved": False,
+        "steps": [*state["steps"], "Node 6: Random number is high enough. Continuing to completion."],
+        "approved": True,
     }
 
 
-def route_after_sixth(
+def route_after_human_review(
     state: WorkflowState,
-) -> Literal["approved, finish", "rejected, retry from node 2"]:
-    return "approved, finish" if state.get("approved", False) else "rejected, retry from node 2"
+) -> Literal["approved, continue to node 3", "rejected, remain in borrower attribution"]:
+    return "approved, continue to node 3" if state.get("approved", False) else "rejected, remain in borrower attribution"
 
 
 def fourth_node(state: WorkflowState) -> dict[str, list[str]]:
@@ -139,6 +157,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph = StateGraph(WorkflowState)
     graph.add_node("pdf_classifier", first_node)
     graph.add_node("borrower_attribution", second_node)
+    graph.add_node("human_review", human_review)
     graph.add_node("third", third_node)
     graph.add_node("fourth", fourth_node)
     graph.add_node("fifth", fifth_node)
@@ -146,7 +165,19 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
 
     graph.add_edge(START, "pdf_classifier")
     graph.add_edge("pdf_classifier", "borrower_attribution")
-    graph.add_edge("borrower_attribution", "third")
+    graph.add_conditional_edges(
+        "borrower_attribution",
+        lambda state: "pending human review",
+        {"pending human review": "human_review"},
+    )
+    graph.add_conditional_edges(
+        "human_review",
+        route_after_human_review,
+        {
+            "approved, continue to node 3": "third",
+            "rejected, remain in borrower attribution": "borrower_attribution",
+        },
+    )
     graph.add_conditional_edges(
         "third",
         route_after_third,
@@ -156,14 +187,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
         },
     )
     graph.add_edge("fifth", "fourth")
-    graph.add_conditional_edges(
-        "sixth",
-        route_after_sixth,
-        {
-            "approved, finish": "fourth",
-            "rejected, retry from node 2": "borrower_attribution",
-        },
-    )
+    graph.add_edge("sixth", "fourth")
     graph.add_edge("fourth", END)
 
     return graph.compile(checkpointer=checkpointer)

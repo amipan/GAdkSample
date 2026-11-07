@@ -4,12 +4,12 @@ This sample project demonstrates a LangGraph human-approval workflow for PDF doc
 
 ## Project layout
 
-- `langgraph_four_node_workflow.py` — the six-node workflow used for the demo.
+- `langgraph_four_node_workflow.py` — the LangGraph workflow used for the demo.
 - `langgraph_workflow_api.py` — FastAPI service that starts, resumes, and lists workflows.
 - `langgraph_gradio_app.py` — Gradio page for pending and completed runs.
 - `workflow_run_registry.py` — SQLite registry used by the workflow API and Gradio app.
 - `File_Classifier/` — PDF classifier API.
-- `File_Attribution/` — borrower extraction API.
+- `File_Attribution/` — borrower and loan-number extraction API.
 
 ## Requirements
 
@@ -99,27 +99,29 @@ Open <http://127.0.0.1:7860> to review pending runs and completed history.
 The demo workflow does the following:
 
 1. `pdf_classifier` uploads the sample PDF to the classifier API and stores the result in state.
-2. `borrower_attribution` uploads the same PDF to the borrower attribution API and stores the extracted name.
-3. `third` generates a random number between 1 and 100.
-4. If the number is below 50, the workflow finishes in `fifth` and `fourth`.
-5. If the number is 50 or higher, the workflow pauses in `sixth` for a human approval decision.
-6. Approval continues, while rejection returns the workflow to the borrower-attribution stage.
+2. `borrower_attribution` uploads the PDF to the attribution API and stores the borrower name, loan number, and extraction evidence.
+3. The workflow pauses at `human_review`. The reviewer can correct the borrower name or loan number before approving.
+4. Approval continues to `third`, which generates a random number between 1 and 100.
+5. If the number is below 50, the workflow runs `fifth`; if it is 50 or higher, it runs `sixth`. Both branches finish through `fourth`.
+6. Rejection returns the workflow to `borrower_attribution` and pauses again for review.
 
-The Mermaid graph uses readable conditional edge labels such as:
+The graph uses readable conditional edge labels such as:
 
 - `random number below 50`
 - `random number 50 or higher`
-- `approved, finish`
-- `rejected, retry from node 2`
+- `approved, continue to node 3`
+- `rejected, remain in borrower attribution`
 
 ## File uploads and document APIs
 
 The document APIs are multipart upload endpoints and accept PDF files.
 
 - Classifier endpoint: `POST /classify` in `File_Classifier/classifier_api.py`
-- Borrower attribution endpoint: `POST /extract-borrower-name` in `File_Attribution/attribution_api.py`
+- Borrower and loan-number extraction endpoint: `POST /extract-borrower-name` in `File_Attribution/attribution_api.py`
 
 Each service validates the file extension, the PDF header, and the size before processing the document.
+
+The attribution response is a named JSON object. It includes `borrower_name` and a nullable `loan_number`, plus separate evidence quotes and one-based page numbers. A loan number is returned only when it is explicitly labeled in the document; its exact text, including leading zeroes, is preserved. Extracted evidence is checked against the PDF text, and the response reports `validation_status` and any `validation_issues`. Scanned pages use OCR and require Tesseract.
 
 ## Local database and workflow history
 
@@ -131,12 +133,13 @@ The registry table `workflow_runs` stores fields including:
 - `status`
 - `random_number`
 - `BorrowerNm`
+- `LoanNumber`
 - `ClassifiedFile`
 - `steps_json`
 - `created_at`
 - `updated_at`
 
-The Gradio page shows the borrower name and classification in the completed table. LangGraph checkpoint rows and write rows are also kept in the same SQLite database and can be cleaned when you want to reset the workflow state.
+The Gradio pending-review page displays editable Borrower and Loan number fields on the same row, along with the full extraction result. The completed table includes both borrower and loan number. Existing registries gain the `LoanNumber` column on initialization. LangGraph checkpoint rows and write rows are also kept in the same SQLite database and can be cleaned when you want to reset the workflow state.
 
 ## Run the standalone script
 
@@ -147,7 +150,7 @@ cd GAdkSample
 .\.venv\Scripts\python.exe langgraph_four_node_workflow.py
 ```
 
-This script creates a thread, executes the workflow, and saves the result to SQLite. If the random number triggers a human approval, the workflow pauses until the workflow API is used to approve or reject it.
+This script creates a thread, executes the workflow, and saves the result to SQLite. The workflow pauses for human review after extraction. After approval, it generates a random number and follows the corresponding branch; rejection returns it to borrower attribution for another review.
 
 ## Notes
 
