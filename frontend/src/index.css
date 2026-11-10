@@ -1,0 +1,68 @@
+:root {
+  --wf-red: #c41230;
+  --wf-red-dark: #8a1c2a;
+  --gold: #ffcd41;
+  --ink: #202a2d;
+  --muted: #6d716e;
+  --canvas: #f2efe9;
+  --line: #e3ddd3;
+  --sans: 'Aptos', 'Segoe UI', sans-serif;
+  --mono: 'Cascadia Code', Consolas, monospace;
+
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 280px;
+  min-height: 100%;
+  background: var(--canvas);
+}
+
+body {
+  min-width: 280px;
+  min-height: 100vh;
+  margin: 0;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(100 76 48 / 2%) 0,
+    rgb(100 76 48 / 2%) 1px,
+    transparent 1px,
+    transparent 9px
+  );
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid #d6a52a;
+  outline-offset: 2px;
+}
+
+button svg {
+  flex: 0 0 auto;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  color: #fff;
+  background: #8a1c2a;
+}

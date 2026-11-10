@@ -8,35 +8,41 @@ from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict
 
 import httpx
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from workflow_run_registry import CHECKPOINT_DB_PATH, initialize_registry, save_run
+from workflow_run_registry import initialize_registry, mysql_checkpointer, save_rejection, save_run
 
 CLASSIFIER_API_URL = os.getenv("CLASSIFIER_API_URL", "http://127.0.0.1:8001")
 ATTRIBUTION_API_URL = os.getenv("ATTRIBUTION_API_URL", "http://127.0.0.1:8002")
-PDF_PATH = Path(
-    r"C:\Users\amipa\AVidhyaCourse\GAdkSample\pdf_store\Northstar_Components_Income_Statement.pdf"
-)
 
 
 class WorkflowState(TypedDict):
     steps: list[str]
+    pdf_path: str
+    processed_pdf_path: NotRequired[str | None]
     classification: NotRequired[dict[str, Any]]
     borrower_name: NotRequired[str | None]
     loan_number: NotRequired[str | None]
-    borrower_extraction_result: NotRequired[dict[str, Any] | None]
+    field_extraction_result: NotRequired[dict[str, Any] | None]
     random_number: NotRequired[int]
     approved: NotRequired[bool]
 
 
+def resolve_pdf_path(pdf_path: str, processed_pdf_path: str | None = None) -> Path:
+    for candidate in (processed_pdf_path, pdf_path):
+        if candidate:
+            path = Path(candidate).expanduser().resolve()
+            if path.is_file() and path.suffix.lower() == ".pdf":
+                return path
+    raise FileNotFoundError("The workflow PDF was not found at its incoming or processed path.")
+
+
 def first_node(state: WorkflowState) -> dict[str, Any]:
-    path = PDF_PATH.expanduser().resolve(strict=True)
-    if not path.is_file() or path.suffix.lower() != ".pdf":
-        raise ValueError(f"Expected a PDF file at {PDF_PATH}")
+    path = resolve_pdf_path(state["pdf_path"], state.get("processed_pdf_path"))
 
     with path.open("rb") as pdf_file:
         response = httpx.post(
@@ -58,11 +64,11 @@ def first_node(state: WorkflowState) -> dict[str, Any]:
 
 
 @tool
-def second_node(steps: list[str]) -> dict[str, Any]:
-    """Add borrower attribution results and the current time to workflow state."""
-    path = PDF_PATH.expanduser().resolve(strict=True)
-    if not path.is_file() or path.suffix.lower() != ".pdf":
-        raise ValueError(f"Expected a PDF file at {PDF_PATH}")
+def second_node(
+    steps: list[str], pdf_path: str, processed_pdf_path: str | None = None
+) -> dict[str, Any]:
+    """Add borrower and loan-number extraction results to workflow state."""
+    path = resolve_pdf_path(pdf_path, processed_pdf_path)
 
     with path.open("rb") as pdf_file:
         response = httpx.post(
@@ -79,22 +85,22 @@ def second_node(steps: list[str]) -> dict[str, Any]:
     return {
         "steps": [
             *steps,
-            f"Node 2: Borrower attribution for {path.name}: "
-            f"{json.dumps(attribution, ensure_ascii=False)}",
+            f"Node 2: Extracted borrower and loan number from {path.name}",
         ],
         "borrower_name": borrower_name,
         "loan_number": loan_number,
-        "borrower_extraction_result": attribution,
+        "field_extraction_result": attribution,
     }
 
 
 def human_review(state: WorkflowState) -> dict[str, Any]:
+    field_extraction_result = state.get("field_extraction_result")
     decision = interrupt(
         {
             "message": "Review the extracted borrower and choose whether to continue.",
             "borrower_name": state.get("borrower_name"),
             "loan_number": state.get("loan_number"),
-            "borrower_extraction_result": state.get("borrower_extraction_result"),
+            "field_extraction_result": field_extraction_result,
         }
     )
     approved = bool(decision.get("approved", False)) if isinstance(decision, dict) else bool(decision)
@@ -106,10 +112,11 @@ def human_review(state: WorkflowState) -> dict[str, Any]:
         "steps": [
             *state["steps"],
             "Node 2.5: Human review complete. "
-            + ("Approved; continuing to the random-number stage." if approved else "Rejected; returning to borrower attribution."),
+            + ("Approved; continuing to the random-number stage." if approved else "Rejected; recording the rejection."),
         ],
         "borrower_name": updated_name,
         "loan_number": updated_loan_number,
+        "field_extraction_result": field_extraction_result,
         "approved": approved,
     }
 
@@ -145,8 +152,15 @@ def sixth_node(state: WorkflowState) -> dict[str, list[str]]:
 
 def route_after_human_review(
     state: WorkflowState,
-) -> Literal["approved, continue to node 3", "rejected, remain in borrower attribution"]:
-    return "approved, continue to node 3" if state.get("approved", False) else "rejected, remain in borrower attribution"
+) -> Literal["approved, continue to node 3", "rejected, record rejection"]:
+    return "approved, continue to node 3" if state.get("approved", False) else "rejected, record rejection"
+
+
+def record_rejection(state: WorkflowState, config: RunnableConfig) -> dict[str, list[str]]:
+    thread_id = str(config["configurable"]["thread_id"])
+    file_name = Path(state["pdf_path"]).name
+    save_rejection(thread_id, file_name)
+    return {"steps": [*state["steps"], "Rejection recorded; workflow ended."]}
 
 
 def fourth_node(state: WorkflowState) -> dict[str, list[str]]:
@@ -156,17 +170,18 @@ def fourth_node(state: WorkflowState) -> dict[str, list[str]]:
 def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph = StateGraph(WorkflowState)
     graph.add_node("pdf_classifier", first_node)
-    graph.add_node("borrower_attribution", second_node)
+    graph.add_node("field_attribution", second_node)
     graph.add_node("human_review", human_review)
+    graph.add_node("record_rejection", record_rejection)
     graph.add_node("third", third_node)
     graph.add_node("fourth", fourth_node)
     graph.add_node("fifth", fifth_node)
     graph.add_node("sixth", sixth_node)
 
     graph.add_edge(START, "pdf_classifier")
-    graph.add_edge("pdf_classifier", "borrower_attribution")
+    graph.add_edge("pdf_classifier", "field_attribution")
     graph.add_conditional_edges(
-        "borrower_attribution",
+        "field_attribution",
         lambda state: "pending human review",
         {"pending human review": "human_review"},
     )
@@ -175,7 +190,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
         route_after_human_review,
         {
             "approved, continue to node 3": "third",
-            "rejected, remain in borrower attribution": "borrower_attribution",
+            "rejected, record rejection": "record_rejection",
         },
     )
     graph.add_conditional_edges(
@@ -188,26 +203,31 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     )
     graph.add_edge("fifth", "fourth")
     graph.add_edge("sixth", "fourth")
+    graph.add_edge("record_rejection", END)
     graph.add_edge("fourth", END)
 
     return graph.compile(checkpointer=checkpointer)
 
 
 if __name__ == "__main__":
+    import argparse
     from uuid import uuid4
 
+    parser = argparse.ArgumentParser(description="Run the workflow for a PDF file.")
+    parser.add_argument("pdf_path", help="Path to the PDF to process")
+    args = parser.parse_args()
+    pdf_path = resolve_pdf_path(args.pdf_path)
     initialize_registry()
-    with SqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH)) as checkpointer:
+    with mysql_checkpointer() as checkpointer:
         checkpointer.setup()
         workflow = build_graph(checkpointer=checkpointer)
         thread_id = str(uuid4())
         config = {"configurable": {"thread_id": thread_id}}
-        result = workflow.invoke({"steps": []}, config)
+        result = workflow.invoke({"steps": [], "pdf_path": str(pdf_path)}, config)
 
         if result.get("__interrupt__"):
             save_run(thread_id, result, "waiting_for_approval")
-            prompt = result["__interrupt__"][0].value
-            print(f"Workflow paused for approval (random number {prompt['random_number']}).")
+            print("Workflow paused for approval.")
             print(f"Thread ID: {thread_id}")
             print("Open the Gradio page and click Refresh pending runs to review it.")
         else:

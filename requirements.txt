@@ -4,12 +4,13 @@ gradio
 httpx
 langchain-core
 langgraph
-langgraph-checkpoint-sqlite
+langgraph-checkpoint-mysql
+PyMySQL
 uvicorn
 pymupdf 
 pytesseract 
 pillow 
 pydantic 
 python-dotenv
-mysql-connector-python
+watchdog
 reportlab
